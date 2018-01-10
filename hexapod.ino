@@ -28,9 +28,9 @@ class Vector3 {
     float get_y() { return y; }
     float get_z() { return z; }
 
-    std::string to_string() {
-
-      return "(" + std::to_string(x) + ", " + std::to_string(y) + ", " + std::to_string(z) + ")";
+    String to_string() {
+      
+      return "(" + String(x) + ", " + String(y) + ", " + String(z) + ")";
     }
 
     Vector3 scale(float scalar) {
@@ -54,6 +54,32 @@ class Vector3 {
               z*vector.get_x() - x*vector.get_z(), 
               x*vector.get_y() - y*vector.get_x()};
     }
+    
+    Vector3 rotate(float angle, Vector3 axis) {
+
+      float angleR = radians(angle);
+    
+      Vector3 vecPar = axis.scale(dot(axis));
+      Vector3 vecPerp1 = sub(vecPar);
+    
+      Vector3 vecPerp2 = vecPerp1.scale(cos(angleR)).add(vecPerp1.cross(axis).scale(sin(angleR)));
+      Vector3 vec2 = vecPar.add(vecPerp2);
+    
+      return vec2;
+    }
+
+    float getAngle(Vector3 vector, Vector3 axis) {
+
+      Vector3 vecPar1 = axis.scale(dot(axis));
+      Vector3 vecPerp1 = sub(vecPar1);
+      Vector3 vecPar2 = axis.scale(vector.dot(axis));
+      Vector3 vecPerp2 = vector.sub(vecPar2);
+    
+      float x = vecPerp1.dot(vecPerp2);
+      float y = vecPerp1.cross(axis).dot(vecPerp2);
+    
+      return degrees(atan2(y, x));
+    }
 
     float magnitude() {
 
@@ -72,32 +98,20 @@ class Vector3 {
     float z;  
 };
 
-
-
-float getAngle(Vector3 vec1, Vector3 vec2, Vector3 axis) {
-
-  Vector3 vecPar1 = axis.scale(vec1.dot(axis));
-  Vector3 vecPerp1 = vec1.sub(vecPar1);
-  Vector3 vecPar2 = axis.scale(vec2.dot(axis));
-  Vector3 vecPerp2 = vec2.sub(vecPar2);
-
-  float x = vecPerp1.dot(vecPerp2);
-  float y = vecPerp1.cross(axis).dot(vecPerp2);
-
-  return degrees(atan2(y, x));
+Vector3 operator+ (Vector3 vectorA, Vector3 vectorB) {
+  return vectorA.add(vectorB);
 }
 
-Vector3 rotate(Vector3 vec1, Vector3 axis, float angle) {
+Vector3 operator- (Vector3 vectorA, Vector3 vectorB) {
+  return vectorA.sub(vectorB);
+}
 
-  float angleR = radians(angle);
+Vector3 operator* (Vector3 vector, float scalar) {
+  return vector.scale(scalar);
+}
 
-  Vector3 vecPar = axis.scale(vec1.dot(axis));
-  Vector3 vecPerp1 = vec1.sub(vecPar);
-
-  Vector3 vecPerp2 = vecPerp1.scale(cos(angleR)).add(vecPerp1.cross(axis).scale(sin(angleR)));
-  Vector3 vec2 = vecPar.add(vecPerp2);
-
-  return vec2;
+Vector3 operator* (float scalar, Vector3 vector) {
+  return vector.scale(scalar);
 }
 
 float invCosRule(float a, float b, float c) {
@@ -105,11 +119,11 @@ float invCosRule(float a, float b, float c) {
   return degrees(acos((pow(b, 2) + pow(c, 2) - pow(a, 2)) / (2 * b * c)));
 }
 
-
+// A wrapper class for servos
 class Joint {
   public:
   
-    Joint(Vector3 restPos_, Vector3 axis_, float angleScale_, float angleOffset_, float resetAngle_) {
+    Joint(Vector3 restPos_, Vector3 axis_, float angleScale_, float angleOffset_, float resetAngle_, float fps) {
       
       angleScale = angleScale_;
       angleOffset = angleOffset_;
@@ -117,6 +131,7 @@ class Joint {
 
       restPos = restPos_;
       axis = axis_;
+      FPS = fps;
     }
 
     void attach(int pin) {
@@ -137,7 +152,7 @@ class Joint {
 
     void reset() {
 
-      write(resetAngle, 0.1);
+      write(resetAngle, 60);
     }
 
     void update() {
@@ -146,11 +161,7 @@ class Joint {
       if (target < read()) {
         g = -1.0;
       }
-      servo.write(joint2servo(read()+g*min(maxSpeed, abs(target-read()))));
-      //servo.write(joint2servo(target));
-      
-      //Serial.println(joint2servo(read()+g*min(maxSpeed, abs(target-read()))));
-      //if (Mathf.Abs(joint.target-joint.read()) < 0.1) joint.lockServo = false;
+      servo.write(joint2servo(read()+g*min(maxSpeed/FPS, abs(target-read()))));
     }
 
     Servo get_servo() { return servo; }
@@ -162,14 +173,16 @@ class Joint {
 
     Servo servo;
 
-    Vector3 restPos;
-    Vector3 axis;
+    Vector3 restPos;        // The absolute position of the servo's axis of rotation when all the angles of previous joints on the same leg are 0
+    Vector3 axis;           // A unit vector that defines the axis of rotation itself
     
-    float angleScale;
+    float angleScale;       // Angle multiplier for callibration
     float angleOffset;
     float resetAngle;
-    float target = 0;
-    float maxSpeed = 0.01;
+    float target = 0;  
+    float maxSpeed = 0.01;  // the maximum angular velocity in degrees per second
+
+    float FPS;
 
     float joint2servo(float angleP) {
       return angleP * angleScale + angleOffset;
@@ -185,20 +198,18 @@ class Leg {
 
     Leg() {}
     
-    Leg (Vector3 restPosP, Joint *joint1, Joint *joint2, Joint *joint3, float fps) {
+    Leg (Vector3 restPos_, Joint *joint1, Joint *joint2, Joint *joint3, float fps) {
 
       joints[0] = joint1;
       joints[1] = joint2;
       joints[2] = joint3;
 
-      restPos = restPosP;
+      restPos = restPos_;
 
       FPS = fps;
     }
 
     void update() {
-
-      //walk();
       
       joints[0]->update();
       joints[1]->update();
@@ -207,76 +218,90 @@ class Leg {
 
     Vector3 get_pos() {
 
-      Vector3 pos2 = rotate(joints[1]->get_restPos().sub(joints[0]->get_restPos()), joints[0]->get_axis(), joints[0]->read()).add(joints[0]->get_restPos());
-      Vector3 axis2 = rotate(joints[1]->get_axis(), joints[0]->get_axis(), joints[0]->read());
-      
-      Vector3 pos3_1 = rotate(joints[2]->get_restPos().sub(joints[0]->get_restPos()), joints[0]->get_axis(), joints[0]->read()).add(joints[0]->get_restPos());   
-      Vector3 pos3 = rotate(pos3_1.sub(pos2), axis2, joints[1]->read()).add(pos2);
-      Vector3 axis3 = rotate(joints[2]->get_axis(), joints[0]->get_axis(), joints[0]->read());
-
-      Vector3 pos4_1 = rotate(restPos.sub(joints[0]->get_restPos()), joints[0]->get_axis(), joints[0]->read()).add(joints[0]->get_restPos());
-      Vector3 pos4_2 = rotate(pos4_1.sub(pos2), axis2, joints[1]->read()).add(pos2);
-      Vector3 pos4 = rotate(pos4_2.sub(pos3), axis3, joints[2]->read()).add(pos3);
-      
-      return pos4;
+      return get_pos(3);
     }
 
-    Vector3 get_pos(int joint) {
+    Vector3 get_pos(int jointIndex) {
 
-      Vector3 pos2 = rotate(joints[1]->get_restPos().sub(joints[0]->get_restPos()), joints[0]->get_axis(), joints[0]->read()).add(joints[0]->get_restPos());
-      Vector3 axis2 = rotate(joints[1]->get_axis(), joints[0]->get_axis(), joints[0]->read());
-      
-      Vector3 pos3_1 = rotate(joints[2]->get_restPos().sub(joints[0]->get_restPos()), joints[0]->get_axis(), joints[0]->read()).add(joints[0]->get_restPos());   
-      Vector3 pos3 = rotate(pos3_1.sub(pos2), axis2, joints[1]->read()).add(pos2);
-      Vector3 axis3 = rotate(joints[2]->get_axis(), joints[0]->get_axis(), joints[0]->read());
+      if (jointIndex == 0) {
+        return get_restPos(0);
+      }
 
-      if (joint == 0) return joints[0]->get_restPos();
-      else if (joint == 1) return pos2;
-      else if (joint == 2) return pos3;
+      Vector3 pos = get_restPos(jointIndex);
+
+      for (int i = jointIndex; i > 0; i--) {
+
+        Vector3 deltaPos = pos - get_restPos(i - 1);
+        pos = get_restPos(i - 1) + deltaPos.rotate(joints[i - 1]->read(), joints[i - 1]->get_axis());
+      }
+
+      return pos;
     }
-    
-
+   
     void writePos(Vector3 target, float maxSpeed) {
 
-      Vector3 joint1ToTarget = target.sub(joints[0]->get_restPos());
+      Vector3 joint1ToTarget = target - get_restPos(0);
+      Vector3 joint1ToLeg = restPos - get_restPos(0);
 
-      float angle1 = getAngle(restPos.sub(joints[0]->get_restPos()), joint1ToTarget, joints[0]->get_axis());
+      Vector3 joint2ToLeg = restPos - get_restPos(1);
 
-      Vector3 target2 = rotate(target.sub(joints[0]->get_restPos()), joints[0]->get_axis(), -angle1).add(joints[0]->get_restPos());
+      Vector3 joint3ToJoint2 = get_restPos(2) - get_restPos(1);
+      Vector3 joint3ToLeg = restPos - get_restPos(2);
 
-      Vector3 joint2ToTarget = target2.sub(joints[1]->get_restPos());
+      float angle1 = joint1ToLeg.getAngle(joint1ToTarget, joints[0]->get_axis());                                                 // The rotation of the first servo
 
-      float offsetAngle = invCosRule(restPos.sub(joints[2]->get_restPos()).magnitude(), joint2ToTarget.magnitude(), joints[1]->get_restPos().sub(joints[2]->get_restPos()).magnitude());
-      float angle2 = getAngle(joints[2]->get_restPos().sub(joints[1]->get_restPos()), joint2ToTarget, joints[1]->get_axis()) - offsetAngle;
+      Vector3 target2 = joint1ToTarget.rotate(-angle1, joints[0]->get_axis()) + get_restPos(0);                                   // The target position with the rotation of the first joint canceled out
+      Vector3 joint2ToTarget2 = target2 - get_restPos(1);
 
-      float angle3 = invCosRule(joint2ToTarget.magnitude(), joints[1]->get_restPos().sub(joints[2]->get_restPos()).magnitude(), restPos.sub(joints[2]->get_restPos()).magnitude()) - invCosRule(restPos.sub(joints[1]->get_restPos()).magnitude(), joints[1]->get_restPos().sub(joints[2]->get_restPos()).magnitude(), restPos.sub(joints[2]->get_restPos()).magnitude());
+      float offsetAngle1 = invCosRule(joint3ToLeg.magnitude(), joint2ToTarget2.magnitude(), joint3ToJoint2.magnitude());          // The angle: target-joint2-joint3
+      float angle2 = joint3ToJoint2.getAngle(joint2ToTarget2, joints[1]->get_axis()) - offsetAngle1;                              // The rotation of the second servo
+
+      float offsetAngle2 = invCosRule(joint2ToLeg.magnitude(), joint3ToJoint2.magnitude(), joint3ToLeg.magnitude());              // The angle: leg-joint3-joint2 at rest
+      float angle3 = invCosRule(joint2ToTarget2.magnitude(), joint3ToJoint2.magnitude(), joint3ToLeg.magnitude()) - offsetAngle2; // The rotation of the third joint
 
       joints[0]->write(angle1, maxSpeed);
       joints[1]->write(angle2, maxSpeed);
       joints[2]->write(angle3, maxSpeed);
     }
 
+    // This function is used to move the leg from A to B using a parabolic trajectory while walking
     void moveTo(Vector3 start, Vector3 end, float height, float time) {
 
-      writePos(start.add(end.sub(start).scale(status/time)).add({0, height * (1 - pow(1 - 2*status/time, 2)), 0}), 10);
+      writePos(start.add(end.sub(start).scale(status/time)).add({0, height * (1 - pow(1 - 2*status/time, 2)), 0}), 600);
     }
 
     void setRefPos(Vector3 refPosP) { refPos = refPosP; }
     void set_status(float stat) { status = stat; }
 
     Vector3 get_refPos() { return refPos; }
+    Vector3 get_restPos() { return get_restPos(3); }
+    Vector3 get_restPos(int index) {
+
+      if (index > 2) {
+        
+        return restPos;
+        
+      } else {
+
+        return joints[index]->get_restPos();
+      }
+    }
 
   private:
 
-    Vector3 restPos;
-    Vector3 refPos;
+    Vector3 restPos; // The absolute position of the end of the leg when the angle of every joint on the leg is 0
+    Vector3 refPos;  // The center location of the motion of the end of the leg while walking
+
+    Vector3 start;   // A start location defined used in the moveTo() function
+    Vector3 end;     // An end location defined used in the moveTo() function
 
     Joint* joints[3];
 
     float FPS;
-    float status = 0;
+    float status = -1; // A value that defines the linear progress of the motion of the moveTo() function
 };
 
+// A legGroup containes the two outer most legs of one side and the middle leg from the other side of the hexapod
 class LegGroup {
 
   public:
@@ -299,8 +324,6 @@ class LegGroup {
 
         legs[i]->update();
       }
-
-     // Serial.println(status);
     }
 
     void walk(Vector3 translation, float rotation, float height, float time) {
@@ -309,17 +332,17 @@ class LegGroup {
 
         if (lifted) {
 
-          Vector3 rotatedPos1 = rotate(legs[i]->get_refPos(), {0, 1, 0}, rotation/2);
-          Vector3 rotatedPos2 = rotate(legs[i]->get_refPos(), {0, 1, 0}, -rotation/2);
+          Vector3 rotatedPos1 = legs[i]->get_refPos().rotate(rotation/2, {0, 1, 0});
+          Vector3 rotatedPos2 = legs[i]->get_refPos().rotate(-rotation/2, {0, 1, 0});
           
-          legs[i]->set_status(status);
-          legs[i]->moveTo(rotatedPos1.add(translation.scale(0.5)), rotatedPos2.sub(translation.scale(0.5)), height, time);
+          legs[i]->set_status(status); // Sets the leg.status equal to the legGroup.status so it can be used in the moveTo() function 
+          legs[i]->moveTo(rotatedPos1 + (0.5 * translation), rotatedPos2 - (0.5 * translation), height, time);
           
         } else {
 
-          Vector3 rotatedPos = rotate(legs[i]->get_refPos(), {0, 1, 0}, -rotation/2 + status/time * rotation);
+          Vector3 rotatedPos = legs[i]->get_refPos().rotate(-rotation/2 + status/time * rotation, {0, 1, 0});
           
-          legs[i]->writePos(rotatedPos.sub(translation.scale(0.5).sub(translation.scale(status/time))), 20);
+          legs[i]->writePos(rotatedPos - (0.5 * translation - (status/time) * translation), 600);
         }
       }
     }
@@ -334,13 +357,13 @@ class LegGroup {
 
     Leg* legs[3];
 
-    float status = 0;
+    float status = 0; // A value that defines the progress of a single step in the walkcycle
     float FPS;
 
     bool lifted = false;
 };
 
-
+// Data structure used to define an task the hexapod could perform for a certain amount of time
 class Command {
 
   public:
@@ -384,12 +407,12 @@ class Hexapod {
 
     void sequence() {
 
-      commandStatus = max(0, commandStatus - 1000/FPS);
+      commandStatus = max(0, commandStatus - 1000 / FPS);
 
       if (commands[commandIndex].type == "end") {
 
         commandIndex = -1;
-        
+
       } else if (commandStatus == 0) {
 
         commandIndex += 1;
@@ -398,8 +421,12 @@ class Hexapod {
 
       if (commands[commandIndex].type == "walk") {
 
-        walk(commands[commandIndex].translation, commands[commandIndex].rotation, commands[commandIndex].stepHight, commands[commandIndex].stepDuration);
+        walk(commands[commandIndex]);
       }
+    }
+
+    void walk(Command command) {
+      walk(command.translation, command.rotation, command.stepHight, command.stepDuration);
     }
 
     void walk(Vector3 translation, float rotation, float height, float time) {
@@ -433,6 +460,8 @@ class Hexapod {
   private:
 
     LegGroup legGroup[2];
+
+    // A sequence of commands that will be executed while the sequence function is being called
     Command commands[7] = {
 
       {"walk", 2000, {80, 0, 0}, 0, 50, 300},
@@ -444,50 +473,48 @@ class Hexapod {
       {"end"}
     };
 
-    int commandIndex = -1;
-    float commandStatus = 0;
+    int commandIndex = -1;   // The command that is currently being executed
+    float commandStatus = 0; // A value that defines the linear progress of the to be executed command
     float FPS;
 };
 
-const float FPS = 60;
-
-Vector3 vec = {0, 0, 0};
+const float FPS = 60; // the framerate of the main loop
 
 Joint joints[18] = {
-  {{130, 21, 75}, {0, -1, 0}, -1, 90, 0},            
-  {{130, 21, 110}, {-1, 0, 0}, 1, 45, 0}, 
-  {{130, 101, 110}, {1, 0, 0}, 1, 0, 0},
+  {{130.5, 15, 75}, {0, -1, 0}, -1, 90, 0, FPS},            
+  {{141, 15, 110.45}, {-1, 0, 0}, 1, 44, 0, FPS}, 
+  {{141, 95, 110.45}, {1, 0, 0}, 1, 12, 0, FPS},
 
-  {{0, 21, 75}, {0, -1, 0}, -1, 73, 0},
-  {{0, 21, 110}, {-1, 0, 0}, 1, 45, 0},
-  {{0, 101, 110}, {1, 0, 0}, 1, 10, 0},
+  {{0, 15, 75}, {0, -1, 0}, -1, 70, 0, FPS},
+  {{-10.5, 15, 110.45}, {-1, 0, 0}, 1, 29, 0, FPS},
+  {{-10.5, 95, 110.45}, {1, 0, 0}, 1, 9, 0, FPS},
 
-  {{-130, 21, 75}, {0, -1, 0}, -1, 75, 0},
-  {{-130, 21, 110}, {-1, 0, 0}, 1, 45, 0},
-  {{-130, 101, 110}, {1, 0, 0}, 1, 0, 0},
+  {{-130.5, 15, 75}, {0, -1, 0}, -1, 75, 0, FPS},
+  {{-141, 15, 110.45}, {-1, 0, 0}, 1, 39, 0, FPS},
+  {{-141, 95, 110.45}, {1, 0, 0}, 1, 15, 0, FPS},
 
-  {{-130, 21, -75}, {0, 1, 0}, 1, 105, 0},
-  {{-130, 21, -110}, {1, 0, 0}, 1, 45, 0},
-  {{-130, 101, -110}, {-1, 0, 0}, 1, 0, 0},
+  {{-130.5, 15, -75}, {0, 1, 0}, 1, 105, 0, FPS},
+  {{-141, 15, -110.45}, {1, 0, 0}, 1, 34, 0, FPS},
+  {{-141, 95, -110.45}, {-1, 0, 0}, 1, 4, 0, FPS},
 
-  {{0, 21, -75}, {0, 1, 0}, 1, 110, 0},
-  {{0, 21, -110}, {1, 0, 0}, 1, 30, 0},
-  {{0, 101, -110}, {-1, 0, 0}, 1, 10, 0},
+  {{0, 15, -75}, {0, 1, 0}, 1, 108, 0, FPS},
+  {{-10.5, 15, -110.45}, {1, 0, 0}, 1.2, 10, 0, FPS},
+  {{-10.5, 95, -110.45}, {-1, 0, 0}, 1, 7, 0, FPS},
 
-  {{130, 21, -75}, {0, 1, 0}, 1, 110, 0},
-  {{130, 21, -110}, {1, 0, 0}, 1, 40, 0},
-  {{130, 101, -110}, {-1, 0, 0}, 1, 0, 0}
+  {{130.5, 15, -75}, {0, 1, 0}, 1, 85, 0, FPS},
+  {{141, 15, -110.45}, {1, 0, 0}, 1, 43, 0, FPS},
+  {{141, 95, -110.45}, {-1, 0, 0}, 1, 1, 0, FPS}
   
 };
 
 Leg legs[6] {
 
-  {{130, -33, 168}, &joints[0], &joints[1], &joints[2], FPS},      // front right
-  {{0, -33, 168}, &joints[3], &joints[4], &joints[5], FPS},        // mid right
-  {{-130, -33, 168}, &joints[6], &joints[7], &joints[8], FPS},     // back right
-  {{-130, -33, -168}, &joints[9], &joints[10], &joints[11], FPS},  // back left
-  {{0, -33, -168}, &joints[12], &joints[13], &joints[14], FPS},    // mid left
-  {{130, -33, -168}, &joints[15], &joints[16], &joints[17], FPS}   // front left
+  {{141, -41.23, 155.88}, &joints[0], &joints[1], &joints[2], FPS},       // front right
+  {{-10.5, -41.23, 155.88}, &joints[3], &joints[4], &joints[5], FPS},     // mid right
+  {{-141, -41.23, 155.88}, &joints[6], &joints[7], &joints[8], FPS},      // back right
+  {{-141, -41.23, -155.88}, &joints[9], &joints[10], &joints[11], FPS},   // back left
+  {{-10.5, -41.23, -155.88}, &joints[12], &joints[13], &joints[14], FPS}, // mid left
+  {{141, -41.23, -155.88}, &joints[15], &joints[16], &joints[17], FPS}    // front left
 };
 
 Hexapod hexapod = {
@@ -496,10 +523,6 @@ Hexapod hexapod = {
   {&legs[1], &legs[3], &legs[5], FPS},
   FPS
 };
-
-Vector3 centre = {252.33, -113.00, 197.33};
-float radius = 30;
-float angle = 0;
 
 void setup() {
 
@@ -527,22 +550,26 @@ void setup() {
   joints[16].attach(43);
   joints[17].attach(2);
 
-  //Serial.begin(9600);
+  Serial.begin(9600);
 
   //-140
-//  legs[0].writePos({130, -140, 168}, 1);
-//  legs[1].writePos({0, -140, 168}, 1);
-//  legs[2].writePos({-130, -140, 168}, 1);
-//  legs[3].writePos({-130, -140, -168}, 1);
-//  legs[4].writePos({0, -140, -168}, 1);
-//  legs[5].writePos({130, -140, -168}, 1);
+//  legs[0].writePos(legs[0].get_restPos().add({0, -50, 0}), 60);
+//  legs[1].writePos(legs[1].get_restPos().add({0, -50, 0}), 60);
+//  legs[2].writePos(legs[2].get_restPos().add({0, -50, 0}), 60);
+//  legs[3].writePos(legs[3].get_restPos().add({0, -50, 0}), 60);
+//  legs[4].writePos(legs[4].get_restPos().add({0, -50, 0}), 60);
+//  legs[5].writePos(legs[5].get_restPos().add({0, -50, 0}), 60);
 
-  legs[0].setRefPos({170, -100, 165});
+  legs[0].setRefPos({180, -100, 165});
   legs[1].setRefPos({0, -100, 165});
-  legs[2].setRefPos({-170, -100, 165});
-  legs[3].setRefPos({-170, -100, -165});
+  legs[2].setRefPos({-180, -100, 165});
+  legs[3].setRefPos({-180, -100, -165});
   legs[4].setRefPos({0, -100, -165});
-  legs[5].setRefPos({170, -100, -165});
+  legs[5].setRefPos({180, -100, -165});
+
+  //for (int i = 0; i < 18; i++) {
+  //  joints[i].write(0, 60);
+  //}
 }
 
 void loop() {
@@ -551,7 +578,7 @@ void loop() {
   //hexapod.walk({0, 0, 0}, 20, 50, 300);
   hexapod.sequence();
 
-  angle += 0.02;
+  //Serial.println(legs[0].get_pos().to_string());
 
   delay(1000/FPS);
 }
