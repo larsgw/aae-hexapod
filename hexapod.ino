@@ -28,10 +28,10 @@ class Vector3 {
     float get_y() { return y; }
     float get_z() { return z; }
 
-    std::string to_string() {
-
-      return "(" + std::to_string(x) + ", " + std::to_string(y) + ", " + std::to_string(z) + ")";
-    }
+    //std::string to_string() {
+//
+     // return "(" + std::to_string(x) + ", " + std::to_string(y) + ", " + std::to_string(z) + ")";
+ //   }
 
     Vector3 scale(float scalar) {
 
@@ -54,6 +54,32 @@ class Vector3 {
               z*vector.get_x() - x*vector.get_z(), 
               x*vector.get_y() - y*vector.get_x()};
     }
+    
+    Vector3 rotate(float angle, Vector3 axis) {
+
+      float angleR = radians(angle);
+    
+      Vector3 vecPar = axis.scale(dot(axis));
+      Vector3 vecPerp1 = sub(vecPar);
+    
+      Vector3 vecPerp2 = vecPerp1.scale(cos(angleR)).add(vecPerp1.cross(axis).scale(sin(angleR)));
+      Vector3 vec2 = vecPar.add(vecPerp2);
+    
+      return vec2;
+    }
+
+    float getAngle(Vector3 vector, Vector3 axis) {
+
+      Vector3 vecPar1 = axis.scale(dot(axis));
+      Vector3 vecPerp1 = sub(vecPar1);
+      Vector3 vecPar2 = axis.scale(vector.dot(axis));
+      Vector3 vecPerp2 = vector.sub(vecPar2);
+    
+      float x = vecPerp1.dot(vecPerp2);
+      float y = vecPerp1.cross(axis).dot(vecPerp2);
+    
+      return degrees(atan2(y, x));
+    }
 
     float magnitude() {
 
@@ -72,32 +98,12 @@ class Vector3 {
     float z;  
 };
 
-
-
-float getAngle(Vector3 vec1, Vector3 vec2, Vector3 axis) {
-
-  Vector3 vecPar1 = axis.scale(vec1.dot(axis));
-  Vector3 vecPerp1 = vec1.sub(vecPar1);
-  Vector3 vecPar2 = axis.scale(vec2.dot(axis));
-  Vector3 vecPerp2 = vec2.sub(vecPar2);
-
-  float x = vecPerp1.dot(vecPerp2);
-  float y = vecPerp1.cross(axis).dot(vecPerp2);
-
-  return degrees(atan2(y, x));
+Vector3 operator+ (Vector3 vectorA, Vector3 vectorB) {
+  return vectorA.add(vectorB);
 }
 
-Vector3 rotate(Vector3 vec1, Vector3 axis, float angle) {
-
-  float angleR = radians(angle);
-
-  Vector3 vecPar = axis.scale(vec1.dot(axis));
-  Vector3 vecPerp1 = vec1.sub(vecPar);
-
-  Vector3 vecPerp2 = vecPerp1.scale(cos(angleR)).add(vecPerp1.cross(axis).scale(sin(angleR)));
-  Vector3 vec2 = vecPar.add(vecPerp2);
-
-  return vec2;
+Vector3 operator- (Vector3 vectorA, Vector3 vectorB) {
+  return vectorA.sub(vectorB);
 }
 
 float invCosRule(float a, float b, float c) {
@@ -207,32 +213,34 @@ class Leg {
 
     Vector3 get_pos() {
 
-      Vector3 pos2 = rotate(joints[1]->get_restPos().sub(joints[0]->get_restPos()), joints[0]->get_axis(), joints[0]->read()).add(joints[0]->get_restPos());
-      Vector3 axis2 = rotate(joints[1]->get_axis(), joints[0]->get_axis(), joints[0]->read());
-      
-      Vector3 pos3_1 = rotate(joints[2]->get_restPos().sub(joints[0]->get_restPos()), joints[0]->get_axis(), joints[0]->read()).add(joints[0]->get_restPos());   
-      Vector3 pos3 = rotate(pos3_1.sub(pos2), axis2, joints[1]->read()).add(pos2);
-      Vector3 axis3 = rotate(joints[2]->get_axis(), joints[0]->get_axis(), joints[0]->read());
-
-      Vector3 pos4_1 = rotate(restPos.sub(joints[0]->get_restPos()), joints[0]->get_axis(), joints[0]->read()).add(joints[0]->get_restPos());
-      Vector3 pos4_2 = rotate(pos4_1.sub(pos2), axis2, joints[1]->read()).add(pos2);
-      Vector3 pos4 = rotate(pos4_2.sub(pos3), axis3, joints[2]->read()).add(pos3);
-      
-      return pos4;
+      return get_pos(2, true);
     }
 
-    Vector3 get_pos(int joint) {
-
-      Vector3 pos2 = rotate(joints[1]->get_restPos().sub(joints[0]->get_restPos()), joints[0]->get_axis(), joints[0]->read()).add(joints[0]->get_restPos());
-      Vector3 axis2 = rotate(joints[1]->get_axis(), joints[0]->get_axis(), joints[0]->read());
+    Vector3 get_pos(int jointIndex) {
       
-      Vector3 pos3_1 = rotate(joints[2]->get_restPos().sub(joints[0]->get_restPos()), joints[0]->get_axis(), joints[0]->read()).add(joints[0]->get_restPos());   
-      Vector3 pos3 = rotate(pos3_1.sub(pos2), axis2, joints[1]->read()).add(pos2);
-      Vector3 axis3 = rotate(joints[2]->get_axis(), joints[0]->get_axis(), joints[0]->read());
+      return get_pos(jointIndex, false);
+    }
 
-      if (joint == 0) return joints[0]->get_restPos();
-      else if (joint == 1) return pos2;
-      else if (joint == 2) return pos3;
+    Vector3 get_pos(int jointIndex, bool addEnd) {
+
+      if (jointIndex == 0) {
+        return joints[0]->get_restPos();
+      }
+
+      Vector3 pos = joints[jointIndex]->get_restPos();
+
+      if (addEnd && jointIndex == 2 /* TODO don't hardcode*/) {
+        pos = pos + restPos;
+      }
+
+      for (int rotationIndex = jointIndex - 1; rotationIndex >= 0; rotationIndex--) {
+        Vector3 axis = joints[rotationIndex]->get_axis();
+        float angle = joints[rotationIndex]->read();
+
+        pos = pos.rotate(angle, axis);
+      }
+
+      return pos + get_pos(jointIndex - 1);
     }
     
 
@@ -240,14 +248,14 @@ class Leg {
 
       Vector3 joint1ToTarget = target.sub(joints[0]->get_restPos());
 
-      float angle1 = getAngle(restPos.sub(joints[0]->get_restPos()), joint1ToTarget, joints[0]->get_axis());
+      float angle1 = restPos.sub(joints[0]->get_restPos()).getAngle(joint1ToTarget, joints[0]->get_axis());
 
-      Vector3 target2 = rotate(target.sub(joints[0]->get_restPos()), joints[0]->get_axis(), -angle1).add(joints[0]->get_restPos());
+      Vector3 target2 = target.sub(joints[0]->get_restPos()).rotate(-angle1, joints[0]->get_axis()).add(joints[0]->get_restPos());
 
       Vector3 joint2ToTarget = target2.sub(joints[1]->get_restPos());
 
       float offsetAngle = invCosRule(restPos.sub(joints[2]->get_restPos()).magnitude(), joint2ToTarget.magnitude(), joints[1]->get_restPos().sub(joints[2]->get_restPos()).magnitude());
-      float angle2 = getAngle(joints[2]->get_restPos().sub(joints[1]->get_restPos()), joint2ToTarget, joints[1]->get_axis()) - offsetAngle;
+      float angle2 = joints[2]->get_restPos().sub(joints[1]->get_restPos()).getAngle(joint2ToTarget, joints[1]->get_axis()) - offsetAngle;
 
       float angle3 = invCosRule(joint2ToTarget.magnitude(), joints[1]->get_restPos().sub(joints[2]->get_restPos()).magnitude(), restPos.sub(joints[2]->get_restPos()).magnitude()) - invCosRule(restPos.sub(joints[1]->get_restPos()).magnitude(), joints[1]->get_restPos().sub(joints[2]->get_restPos()).magnitude(), restPos.sub(joints[2]->get_restPos()).magnitude());
 
@@ -309,15 +317,15 @@ class LegGroup {
 
         if (lifted) {
 
-          Vector3 rotatedPos1 = rotate(legs[i]->get_refPos(), {0, 1, 0}, rotation/2);
-          Vector3 rotatedPos2 = rotate(legs[i]->get_refPos(), {0, 1, 0}, -rotation/2);
+          Vector3 rotatedPos1 = legs[i]->get_refPos().rotate(rotation/2, {0, 1, 0});
+          Vector3 rotatedPos2 = legs[i]->get_refPos().rotate(-rotation/2, {0, 1, 0});
           
           legs[i]->set_status(status);
           legs[i]->moveTo(rotatedPos1.add(translation.scale(0.5)), rotatedPos2.sub(translation.scale(0.5)), height, time);
           
         } else {
 
-          Vector3 rotatedPos = rotate(legs[i]->get_refPos(), {0, 1, 0}, -rotation/2 + status/time * rotation);
+          Vector3 rotatedPos = legs[i]->get_refPos().rotate(-rotation/2 + status/time * rotation, {0, 1, 0});
           
           legs[i]->writePos(rotatedPos.sub(translation.scale(0.5).sub(translation.scale(status/time))), 20);
         }
@@ -384,12 +392,12 @@ class Hexapod {
 
     void sequence() {
 
-      commandStatus = max(0, commandStatus - 1000/FPS);
+      commandStatus = max(0, commandStatus - 1000 / FPS);
 
       if (commands[commandIndex].type == "end") {
 
         commandIndex = -1;
-        
+
       } else if (commandStatus == 0) {
 
         commandIndex += 1;
@@ -398,8 +406,12 @@ class Hexapod {
 
       if (commands[commandIndex].type == "walk") {
 
-        walk(commands[commandIndex].translation, commands[commandIndex].rotation, commands[commandIndex].stepHight, commands[commandIndex].stepDuration);
+        walk(commands[commandIndex]);
       }
+    }
+
+    void walk(Command command) {
+      walk(command.translation, command.rotation, command.stepHight, command.stepDuration);
     }
 
     void walk(Vector3 translation, float rotation, float height, float time) {
