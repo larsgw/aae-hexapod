@@ -577,26 +577,11 @@ void setup() {
 //  }
 }
 
-float foo = 1000;
-bool bar = false;
-
 void loop() {
 
   hexapod.update();
-  hexapod.walk({100, 0, 0}, 0, 50, 500);
-  //hexapod.sequence();
-
-  //Serial.println(legs[0].get_pos().to_string());
-
-//  foo = max(0, foo - 1000/FPS);
-//
-//  if (foo == 0) {
-//    bar = !bar;
-//    foo = 1000;
-//  }
-//
-//  if (bar) legs[0].writePos({141, -41.23, 155.88}, 60);
-//  else legs[0].writePos({181, -41.23, 155.88}, 60);
+  
+  hexapod.sequence();
 
   delay(1000/FPS);
 }
