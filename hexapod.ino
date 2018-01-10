@@ -161,7 +161,7 @@ class Joint {
       if (target < read()) {
         g = -1.0;
       }
-      servo.write(joint2servo(read()+g*min(maxSpeed/FPS, abs(target-read()))));
+      servo.write(joint2servo(read() + g * min(maxSpeed / FPS, abs(target - read()))));
     }
 
     Servo get_servo() { return servo; }
@@ -267,7 +267,7 @@ class Leg {
     // This function is used to move the leg from A to B using a parabolic trajectory while walking
     void moveTo(Vector3 start, Vector3 end, float height, float time) {
 
-      writePos(start.add(end.sub(start).scale(status/time)).add({0, height * (1 - pow(1 - 2*status/time, 2)), 0}), 600);
+      writePos(start.add(end.sub(start).scale(status / time)).add({0, height * (1 - pow(1 - 2 * status / time, 2)), 0}), 600);
     }
 
     void setRefPos(Vector3 refPosP) { refPos = refPosP; }
@@ -318,7 +318,7 @@ class LegGroup {
 
     void update() {
 
-      status = max(0, status - 1000/FPS); 
+      status = max(0, status - 1000 / FPS); 
 
       for (int i = 0; i < 3; i++) {
 
@@ -332,8 +332,8 @@ class LegGroup {
 
         if (lifted) {
 
-          Vector3 rotatedPos1 = legs[i]->get_refPos().rotate(rotation/2, {0, 1, 0});
-          Vector3 rotatedPos2 = legs[i]->get_refPos().rotate(-rotation/2, {0, 1, 0});
+          Vector3 rotatedPos1 = legs[i]->get_refPos().rotate(rotation / 2, {0, 1, 0});
+          Vector3 rotatedPos2 = legs[i]->get_refPos().rotate(-rotation / 2, {0, 1, 0});
           
           legs[i]->set_status(status); // Sets the leg.status equal to the legGroup.status so it can be used in the moveTo() function 
           legs[i]->moveTo(rotatedPos1 + (0.5 * translation), rotatedPos2 - (0.5 * translation), height, time);
@@ -342,7 +342,7 @@ class LegGroup {
 
           Vector3 rotatedPos = legs[i]->get_refPos().rotate(-rotation/2 + status/time * rotation, {0, 1, 0});
           
-          legs[i]->writePos(rotatedPos - (0.5 * translation - (status/time) * translation), 600);
+          legs[i]->writePos(rotatedPos - ((0.5 - status / time) * translation), 600);
         }
       }
     }
@@ -383,7 +383,12 @@ class Command {
 
     Command(String type_, float duration_, Vector3 translation_, float rotation_, float stepHight_, float stepDuration_) {
 
-      type = type_; duration = duration_; translation = translation_; rotation = rotation_; stepHight = stepHight_; stepDuration = stepDuration_;
+      type = type_;
+      duration = duration_;
+      translation = translation_;
+      rotation = rotation_;
+      stepHight = stepHight_;
+      stepDuration = stepDuration_;
     }
 };
 
@@ -478,7 +483,7 @@ class Hexapod {
     float FPS;
 };
 
-const float FPS = 60; // the framerate of the main loop
+const float FPS = 45; // the framerate of the main loop
 
 Joint joints[18] = {
   {{130.5, 15, 75}, {0, -1, 0}, -1, 90, 0, FPS},            
@@ -526,12 +531,12 @@ Hexapod hexapod = {
 
 void setup() {
 
-  joints[0].attach(13); //First
-  joints[1].attach(53); //Second
-  joints[2].attach(12); //Third
+  joints[0].attach(13); // First
+  joints[1].attach(53); // Second
+  joints[2].attach(12); // Third
 
-  joints[3].attach(11);
-  joints[4].attach(51);
+  joints[3].attach(11); // First
+  joints[4].attach(51); // ...
   joints[5].attach(10);
 
   joints[6].attach(9);
@@ -567,18 +572,31 @@ void setup() {
   legs[4].setRefPos({0, -100, -165});
   legs[5].setRefPos({180, -100, -165});
 
-  //for (int i = 0; i < 18; i++) {
-  //  joints[i].write(0, 60);
-  //}
+//  for (int i = 0; i < 18; i++) {
+//    joints[i].write(10, 60);
+//  }
 }
+
+float foo = 1000;
+bool bar = false;
 
 void loop() {
 
   hexapod.update();
-  //hexapod.walk({0, 0, 0}, 20, 50, 300);
-  hexapod.sequence();
+  hexapod.walk({100, 0, 0}, 0, 50, 500);
+  //hexapod.sequence();
 
   //Serial.println(legs[0].get_pos().to_string());
+
+//  foo = max(0, foo - 1000/FPS);
+//
+//  if (foo == 0) {
+//    bar = !bar;
+//    foo = 1000;
+//  }
+//
+//  if (bar) legs[0].writePos({141, -41.23, 155.88}, 60);
+//  else legs[0].writePos({181, -41.23, 155.88}, 60);
 
   delay(1000/FPS);
 }
